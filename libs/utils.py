@@ -115,8 +115,8 @@ class Utils:
         return delete_cluster_thread_list
 
     # To form the cluster_info dict for cleanup funtions
-    # It will be called only when --cleanup-clusters without --install-clusters
-    def get_cluster_info(self, platform):
+    # Reforming the dictionary 
+    def set_cluster_info(self, platform):
         loop_counter = 0
         while loop_counter < platform.environment["cluster_count"]:
             loop_counter += 1
@@ -211,14 +211,16 @@ class Utils:
         shutil.copy2(platform.environment['load']['executor'], my_path)
         load_env["ITERATIONS"] = str(platform.environment['clusters'][cluster_name]['workers'] * platform.environment['load']['jobs'])
         load_env["EXTRA_FLAGS"] = "--churn-duration=" + platform.environment['load']['duration'] + " --churn-percent=10 --churn-delay=30s --timeout=24h"
-        # if es_url is not None:
-        #     load_env["ES_SERVER"] = es_url
+        if platform.environment['es_url']:
+            load_env["ES_SERVER"] = platform.environment['es_url']
+            load_env["ES_INSECURE"] = platform.environment['es_insecure']            
         load_env["LOG_LEVEL"] = "debug"
+        load_env["GC"] = "false"
         load_env["WORKLOAD"] = platform.environment['load']['workload']
         load_env["KUBE_DIR"] = my_path
         if not self.force_terminate:
-            load_code, load_out, load_err = self.subprocess_exec('./run.sh', my_path + '/cluster_load.log', extra_params={'cwd': my_path + "/workload/" + platform.environment['load']['script_path'], 'env': load_env})
+            load_code, load_out, load_err = self.subprocess_exec('./run.sh', my_path + '/cluster_load.log', extra_params={'cwd': my_path + '/workload/' + platform.environment['load']['script_path'], 'env': load_env})
             if load_code != 0:
-                self.logging.error(f"Failed to execute workload {platform.environment['load']['script_path'] + '/run.sh'} on {cluster_name}")
+                self.logging.error(f"Failed to execute workload {my_path + '/workload/' + platform.environment['load']['script_path'] + '/run.sh'} on {cluster_name}")
         else:
             self.logging.warning(f"Not starting workload on {cluster_name} after capturing Ctrl-C")

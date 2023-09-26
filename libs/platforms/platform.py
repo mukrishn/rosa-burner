@@ -86,6 +86,10 @@ class Platform:
         else:
             self.environment["cleanup_clusters"] = False
 
+        if arguments["es_url"]:
+            self.environment["es_url"] = arguments["es_url"]
+            self.environment["es_insecure"] = arguments["es_insecure"]
+
         try:
             self.logging.debug("Saving test UUID to the working directory")
             uuid_file = open(self.environment["path"] + "/uuid", "w")
