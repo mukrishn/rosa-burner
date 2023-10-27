@@ -37,7 +37,8 @@ class Terraform(Rosa):
     def initialize(self):
         super().initialize()
 
-        shutil.copytree(sys.path[0] + "/libs/platforms/rosa/terraform/files", self.environment['path'] + "/terraform")
+        if not os.path.exists(self.environment['path'] + "/terraform"):
+            shutil.copytree(sys.path[0] + "/libs/platforms/rosa/terraform/files", self.environment['path'] + "/terraform")
 
         self.logging.info("Initializing Terraform with: terraform init")
         terraform_code, terraform_out, terraform_err = self.utils.subprocess_exec("terraform init", self.environment["path"] + "/terraform/terraform-init.log", {"cwd": self.environment["path"] + "/terraform"})
@@ -151,7 +152,8 @@ class Terraform(Rosa):
                     try:
                         self.logging.info(f"Applying template to delete {platform.environment['clusters_per_apply']} with cluster seed {tf_name} looping {loop_counter + 1}")
                         tf_path = platform.environment["path"] + "/" + "TF_" + tf_name + "-" + str(loop_counter * self.environment['clusters_per_apply']).zfill(4)
-                        os.mkdir(tf_path)
+                        if not os.path.exists(tf_path):
+                            os.mkdir(tf_path)
 
                         myenv = os.environ.copy()
                         myenv["TF_VAR_token"] = self.environment["ocm_token"]
