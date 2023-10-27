@@ -43,7 +43,12 @@ class Terraform(Rosa):
         self.logging.info("Initializing Terraform with: terraform init")
         terraform_code, terraform_out, terraform_err = self.utils.subprocess_exec("terraform init", self.environment["path"] + "/terraform/terraform-init.log", {"cwd": self.environment["path"] + "/terraform"})
         if terraform_code != 0:
-            self.logging.error(f"Failed to initialize terraform. Check {self.environment['path']}/terraform/init.log for more information")
+            self.logging.error(f"Failed to initialize terraform. Check {self.environment['path']}/terraform/terraform-init.log for more information")
+            sys.exit("Exiting...")
+
+        terraform_code, terraform_out, terraform_err = self.utils.subprocess_exec("terraform init", self.environment["path"] + "/terraform/oidc_provider/terraform-init.log", {"cwd": self.environment["path"] + "/terraform/oidc_provider"})
+        if terraform_code != 0:
+            self.logging.error(f"Failed to initialize terraform. Check {self.environment['path']}/terraform/oidc_provider/terraform-init.log for more information")
             sys.exit("Exiting...")
 
     def platform_cleanup(self):
