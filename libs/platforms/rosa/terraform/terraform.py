@@ -28,7 +28,7 @@ class Terraform(Rosa):
             self.logging.debug(str(self.environment['cluster_count'] % arguments['clusters_per_apply']))
             self.logging.info(str(arguments['clusters_per_apply']) + " clusters will be installed on each Terraform Apply")
             self.environment['clusters_per_apply'] = arguments['clusters_per_apply']
-            self.environment['cluster_per_apply_count'] = self.environment['cluster_count'] / self.environment['clusters_per_apply']
+            self.environment['clusters_per_apply_count'] = self.environment['cluster_count'] / self.environment['clusters_per_apply']
         else:
             self.logging.debug(str(self.environment['cluster_count'] % arguments['clusters_per_apply']))
             self.logging.error("--cluster-count (" + str(self.environment['cluster_count']) + ") parameter must be divisible by --clusters-per-apply (" + str(arguments['clusters_per_apply']) + ")")
@@ -50,7 +50,7 @@ class Terraform(Rosa):
 
     def apply_tf_template(self, platform):
         loop_counter = 0
-        while loop_counter < platform.environment["cluster_per_apply_count"]:
+        while loop_counter < platform.environment["clusters_per_apply_count"]:
             tf_counter = 0
             self.logging.debug(platform.environment["clusters"])
             if self.utils.force_terminate:
@@ -70,7 +70,7 @@ class Terraform(Rosa):
                     tf_name = platform.environment["cluster_name_seed"]
 
                     try:
-                        self.logging.info(f"Applying template to create {platform.environment['cluster_per_apply']} with cluster seed {tf_name} looping {loop_counter + 1}")
+                        self.logging.info(f"Applying template to create {platform.environment['clusters_per_apply']} with cluster seed {tf_name} looping {loop_counter + 1}")
                         tf_path = platform.environment["path"] + "/" + "TF_" + tf_name + "-" + str(loop_counter * self.environment['clusters_per_apply']).zfill(4)
                         os.mkdir(tf_path)
 
@@ -118,7 +118,7 @@ class Terraform(Rosa):
                         self.logging.error(f"Failed to apply with cluster seed {tf_name} looping {loop_counter + 1}")
                         self.logging.error(err)
 
-                while tf_counter < platform.environment["cluster_per_apply"]:
+                while tf_counter < platform.environment["clusters_per_apply"]:
                     cluster_name = platform.environment["cluster_name_seed"] + "-" + str((loop_counter * self.environment['clusters_per_apply']) + (tf_counter + 1)).zfill(4)
                     platform.environment["clusters"][cluster_name] = {}
                     platform.environment["clusters"][cluster_name]["tf_index"] = loop_counter
@@ -129,7 +129,7 @@ class Terraform(Rosa):
 
     def destroy_tf_template(self, platform):
         loop_counter = 0
-        while loop_counter < platform.environment["cluster_per_apply_count"]:
+        while loop_counter < platform.environment["clusters_per_apply_count"]:
             tf_counter = 0
             self.logging.debug(platform.environment["clusters"])
             if self.utils.force_terminate:
@@ -149,7 +149,7 @@ class Terraform(Rosa):
                     tf_name = platform.environment["cluster_name_seed"]
 
                     try:
-                        self.logging.info(f"Applying template to delete {platform.environment['cluster_per_apply']} with cluster seed {tf_name} looping {loop_counter + 1}")
+                        self.logging.info(f"Applying template to delete {platform.environment['clusters_per_apply']} with cluster seed {tf_name} looping {loop_counter + 1}")
                         tf_path = platform.environment["path"] + "/" + "TF_" + tf_name + "-" + str(loop_counter * self.environment['clusters_per_apply']).zfill(4)
                         os.mkdir(tf_path)
 
@@ -180,7 +180,7 @@ class Terraform(Rosa):
                         self.logging.error(f"Failed to apply with cluster seed {tf_name} looping {loop_counter + 1}")
                         self.logging.error(err)
 
-                while tf_counter < platform.environment["cluster_per_apply"]:
+                while tf_counter < platform.environment["clusters_per_apply"]:
                     cluster_name = platform.environment["cluster_name_seed"] + "-" + str((loop_counter * self.environment['clusters_per_apply']) + (tf_counter + 1)).zfill(4)
                     platform.environment["clusters"][cluster_name]["tf_index"] = loop_counter
                     platform.environment["clusters"][cluster_name]["cluster_start_time"] = cluster_start_time
