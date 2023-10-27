@@ -33,6 +33,11 @@ variable "loop_factor" {
   default = null
 }
 
+variable "oidc_config_id" {
+  type    = string
+  default = null
+}
+
 variable "cloud_region" {
   type    = string
   default = "us-east-2"

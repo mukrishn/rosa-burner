@@ -49,6 +49,10 @@ class Terraform(Rosa):
     def platform_cleanup(self):
         super().platform_cleanup()
 
+    def _oidc_tf_template(self, action, tf_path, myenv):
+        code, out, err = self.utils.subprocess_exec("terraform " + action + " --auto-approve -state=" + tf_path + "/terraform_oidc.tfstate ", tf_path + "/terraform_oidc_apply.log", {"cwd": self.environment['path'] + "/terraform/oidc_provider", 'preexec_fn': self.utils.disable_signals, "env": myenv})
+        return code, out, err
+
     def apply_tf_template(self, platform):
         loop_counter = 0
         while loop_counter < platform.environment["clusters_per_apply_count"]:
@@ -71,7 +75,6 @@ class Terraform(Rosa):
                     tf_name = platform.environment["cluster_name_seed"]
 
                     try:
-                        self.logging.info(f"Applying template to create {platform.environment['clusters_per_apply']} with cluster seed {tf_name} looping {loop_counter + 1}")
                         tf_path = platform.environment["path"] + "/" + "TF_" + tf_name + "-" + str(loop_counter * self.environment['clusters_per_apply']).zfill(4)
                         os.mkdir(tf_path)
 
@@ -86,6 +89,25 @@ class Terraform(Rosa):
                         myenv["TF_VAR_clusters_per_apply"] = str(self.environment['clusters_per_apply'])
                         myenv["TF_VAR_loop_factor"] = str((loop_counter * self.environment['clusters_per_apply']))
 
+                        # additional env for oidc_provider template
+                        myenv["TF_VAR_managed"] = "true"
+
+                        self.logging.info(f"Applying OIDC template to create oidc_provider for cluster seed {tf_name} looping {loop_counter + 1}")
+                        terraform_oidc_apply_code, terraform_oidc_apply_out, terraform_oidc_apply_err = self._oidc_tf_template("apply", tf_path, myenv)
+                        if terraform_oidc_apply_code != 0:
+                            self.logging.error(f"OIDC with seed {tf_name} looping {loop_counter + 1} terraform apply failed")
+                            self.logging.debug(terraform_oidc_apply_out)
+                            return 1
+                        else:
+                            self.logging.info(f"Applied OIDC template successfully for cluster seed {tf_name} looping {loop_counter + 1}")
+                            with open(tf_path + "/terraform/oidc_provider/terraform.tfstate", "r") as terraform_state:
+                                json_output = json.load(terraform_state)
+                            oidc_id = json_output["outputs"]["id"]["value"]
+                        
+                        # Passing new OIDC ID to the cluster template
+                        myenv["TF_VAR_oidc_config_id"] = oidc_id
+
+                        self.logging.info(f"Applying template to create {platform.environment['clusters_per_apply']} with cluster seed {tf_name} looping {loop_counter + 1}")
                         terraform_plan_code, terraform_plan_out, terraform_plan_err = self.utils.subprocess_exec("terraform plan -out " + tf_path + "/" + tf_name + ".tfplan", tf_path + "/terraform_plan.log", {"cwd": self.environment['path'] + "/terraform", "env": myenv})
                         if terraform_plan_code != 0:
                             self.logging.error(f"Clusters with seed {tf_name} looping {loop_counter + 1} terraform plan failed")
@@ -128,7 +150,7 @@ class Terraform(Rosa):
 
             loop_counter += 1
 
-    def destroy_tf_template(self, platform):
+    def destroy_tf_template(self, platform, tf_module="cluster"):
         loop_counter = 0
         while loop_counter < platform.environment["clusters_per_apply_count"]:
             tf_counter = 0
@@ -150,7 +172,7 @@ class Terraform(Rosa):
                     tf_name = platform.environment["cluster_name_seed"]
 
                     try:
-                        self.logging.info(f"Applying template to delete {platform.environment['clusters_per_apply']} with cluster seed {tf_name} looping {loop_counter + 1}")
+
                         tf_path = platform.environment["path"] + "/" + "TF_" + tf_name + "-" + str(loop_counter * self.environment['clusters_per_apply']).zfill(4)
                         if not os.path.exists(tf_path):
                             os.mkdir(tf_path)
@@ -165,18 +187,30 @@ class Terraform(Rosa):
                         myenv["TF_VAR_operator_role_prefix"] = tf_name + str(loop_counter)
                         myenv["TF_VAR_clusters_per_apply"] = str(self.environment['clusters_per_apply'])
                         myenv["TF_VAR_loop_factor"] = str((loop_counter * self.environment['clusters_per_apply']))
-                        cluster_start_time = int(datetime.datetime.utcnow().timestamp())
 
-                        self.logging.info(f"Deleting Clusters with seed {tf_name} looping {loop_counter + 1} on Rosa Platform using terraform")
-                        cleanup_code, cleanup_out, cleanup_err = self.utils.subprocess_exec("terraform apply -destroy -state=" + tf_path + "/terraform.tfstate --auto-approve", tf_path + "/cleanup.log", {"cwd": self.environment['path'] + "/terraform", 'preexec_fn': self.utils.disable_signals, "env": myenv})
+                        if tf_module == "oidc":
+                            # additional env for oidc_provider template
+                            myenv["TF_VAR_managed"] = "true"
 
-                        if cleanup_code != 0:
-                            self.logging.debug(
-                                f"Confirm Clusters with seed {tf_name} looping {loop_counter + 1} is failed"
-                            )
-                            self.logging.debug(cleanup_out)
-                            self.logging.debug(cleanup_err)
-                            return 1
+                            self.logging.info(f"Destroying OIDC template to delete oidc_provider for cluster seed {tf_name} looping {loop_counter + 1}")
+                            terraform_oidc_destroy_code, terraform_oidc_destroy_out, terraform_oidc_destroy_err = self._oidc_tf_template("apply -destroy", tf_path, myenv)
+                            if terraform_oidc_destroy_code != 0:
+                                self.logging.error(f"OIDC with seed {tf_name} looping {loop_counter + 1} terraform destroy failed")
+                                self.logging.debug(terraform_oidc_destroy_out)
+                                return 1
+                            
+                        else:
+                            cluster_start_time = int(datetime.datetime.utcnow().timestamp())
+                            self.logging.info(f"Deleting Clusters with seed {tf_name} looping {loop_counter + 1} on Rosa Platform using terraform")
+                            cleanup_code, cleanup_out, cleanup_err = self.utils.subprocess_exec("terraform apply -destroy -state=" + tf_path + "/terraform.tfstate --auto-approve", tf_path + "/cleanup.log", {"cwd": self.environment['path'] + "/terraform", 'preexec_fn': self.utils.disable_signals, "env": myenv})
+
+                            if cleanup_code != 0:
+                                self.logging.debug(
+                                    f"Confirm Clusters with seed {tf_name} looping {loop_counter + 1} is failed"
+                                )
+                                self.logging.debug(cleanup_out)
+                                self.logging.debug(cleanup_err)
+                                return 1
 
                     except Exception as err:
                         self.logging.error(f"Failed to apply with cluster seed {tf_name} looping {loop_counter + 1}")

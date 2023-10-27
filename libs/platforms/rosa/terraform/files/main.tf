@@ -31,18 +31,6 @@ provider "rhcs" {
   url   = var.url
 }
 
-# Create managed OIDC config
-module "oidc_config" {
-  token                = var.token
-  url                  = var.url
-  source               = "./oidc_provider"
-  managed              = true
-  operator_role_prefix = var.operator_role_prefix
-  account_role_prefix  = var.account_role_prefix
-  tags                 = var.tags
-  path                 = var.path
-}
-
 locals {
   path = coalesce(var.path, "/")
   sts_roles = {
@@ -53,7 +41,7 @@ locals {
       worker_role_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role${local.path}${var.account_role_prefix}-Worker-Role"
     },
     operator_role_prefix = var.operator_role_prefix,
-    oidc_config_id       = module.oidc_config.id
+    oidc_config_id       = var.oidc_config_id
   }
 }
 
