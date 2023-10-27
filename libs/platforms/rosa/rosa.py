@@ -199,8 +199,8 @@ class Rosa(Platform):
             )
             return True
 
-    def platform_cleanup(self):
-        super().platform_cleanup()
+    def platform_cleanup(self, platform=""):
+        super().platform_cleanup(platform)
 
     def create_cluster(self, platform, cluster_name):
         super().create_cluster(platform, cluster_name)

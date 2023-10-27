@@ -51,8 +51,9 @@ class Terraform(Rosa):
             self.logging.error(f"Failed to initialize terraform. Check {self.environment['path']}/terraform/oidc_provider/terraform-init.log for more information")
             sys.exit("Exiting...")
 
-    def platform_cleanup(self):
-        super().platform_cleanup()
+    def platform_cleanup(self, platform=""):
+        super().platform_cleanup(platform)
+        self.destroy_tf_template(platform, tf_module="oidc")
 
     def _oidc_tf_template(self, action, tf_path, myenv):
         code, out, err = self.utils.subprocess_exec("terraform " + action + " --auto-approve -state=" + tf_path + "/terraform_oidc.tfstate ", tf_path + "/terraform_oidc_apply.log", {"cwd": self.environment['path'] + "/terraform/oidc_provider", 'preexec_fn': self.utils.disable_signals, "env": myenv})
@@ -229,6 +230,9 @@ class Terraform(Rosa):
 
             loop_counter += 1
 
+    # Cluster deletion will be initiated by destroy_tf_template
+    # this function waits and verifies the deletions 
+    # No actual delete logic in this function unlike other subplatform
     def delete_cluster(self, platform, cluster_name):
         super().delete_cluster(platform, cluster_name)
         cluster_info = platform.environment["clusters"][cluster_name]
@@ -294,6 +298,9 @@ class Terraform(Rosa):
         ready_nodes = status_list["True"] if "True" in status_list else 0
         return ready_nodes
 
+    # Cluster creation will be initiated by apply_tf_template
+    # this function waits and verifies the creation 
+    # No actual create logic in this function unlike other subplatform
     def create_cluster(self, platform, cluster_name):
         super().create_cluster(platform, cluster_name)
         cluster_info = platform.environment["clusters"][cluster_name]
