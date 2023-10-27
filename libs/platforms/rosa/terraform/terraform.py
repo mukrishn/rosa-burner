@@ -53,7 +53,7 @@ class Terraform(Rosa):
         while loop_counter < platform.environment["cluster_per_apply_count"]:
             tf_counter = 0
             self.logging.debug(platform.environment["clusters"])
-            if self.force_terminate:
+            if self.utils.force_terminate:
                 loop_counter += 1
             else:
                 create_cluster = False
@@ -132,7 +132,7 @@ class Terraform(Rosa):
         while loop_counter < platform.environment["cluster_per_apply_count"]:
             tf_counter = 0
             self.logging.debug(platform.environment["clusters"])
-            if self.force_terminate:
+            if self.utils.force_terminate:
                 loop_counter += 1
             else:
                 delete_cluster = False
