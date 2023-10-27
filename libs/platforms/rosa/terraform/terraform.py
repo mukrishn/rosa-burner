@@ -59,6 +59,8 @@ class Terraform(Rosa):
         code, out, err = self.utils.subprocess_exec("terraform " + action + " --auto-approve -state=" + tf_path + "/terraform_oidc.tfstate ", tf_path + "/terraform_oidc_apply.log", {"cwd": self.environment['path'] + "/terraform/oidc_provider", 'preexec_fn': self.utils.disable_signals, "env": myenv})
         return code, out, err
 
+    # creates templates based on the clusters_per_apply
+    # and apply them at given interval without wait for it to complete
     def apply_tf_template(self, platform):
         loop_counter = 0
         while loop_counter < platform.environment["clusters_per_apply_count"]:
@@ -156,6 +158,8 @@ class Terraform(Rosa):
 
             loop_counter += 1
 
+    # uses created templates based on the clusters_per_apply
+    # and destroy them at given interval without wait for it to complete
     def destroy_tf_template(self, platform, tf_module="cluster"):
         loop_counter = 0
         while loop_counter < platform.environment["clusters_per_apply_count"]:
