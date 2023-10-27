@@ -21,6 +21,9 @@ class Platform:
 
         self.environment["platform"] = arguments["platform"]
 
+        if arguments["subplatform"]:
+            self.environment["subplatform"] = arguments["subplatform"]
+
         self.environment["ocm_url"] = arguments["ocm_url"]
         self.environment["ocm_token"] = arguments["ocm_token"]
 

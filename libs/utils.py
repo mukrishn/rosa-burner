@@ -93,6 +93,8 @@ class Utils:
             time.sleep(platform.environment["wait_before_cleanup"] * 60)
         self.logging.info(f"Attempting to start cleanup process of {len(platform.environment['clusters'])} clusters waiting {platform.environment['delay_between_cleanup']} minutes between each deletion")
         delete_cluster_thread_list = []
+        if self.environment["subplatform"] and self.environment["subplatform"] == "terraform":
+            platform.destroy_tf_template(platform)        
         for cluster_name, cluster_info in platform.environment["clusters"].items():
             self.logging.info(f"Attempting to start cleanup process of {cluster_name} on status: {cluster_info['status']}")
             try:
@@ -152,6 +154,8 @@ class Utils:
         batch_count = 0
         loop_counter = 0
         try:
+            if self.environment["subplatform"] and self.environment["subplatform"] == "terraform":
+                platform.apply_tf_template(platform)
             while loop_counter < platform.environment["cluster_count"]:
                 self.logging.debug(platform.environment["clusters"])
                 if self.force_terminate:
@@ -182,7 +186,9 @@ class Utils:
                         else:
                             cluster_workers = int(platform.environment["workers"].split(",")[(loop_counter - 1) % len(platform.environment["workers"].split(","))])
                         cluster_name = platform.environment["cluster_name_seed"] + "-" + str(loop_counter).zfill(4)
-                        platform.environment["clusters"][cluster_name] = {}
+
+                        if cluster_name not in platform.environment["clusters"]: 
+                            platform.environment["clusters"][cluster_name]= {}
                         try:
                             platform.environment["clusters"][cluster_name]["workers"] = cluster_workers
                             platform.environment["clusters"][cluster_name]["workers_wait_time"] = platform.environment["workers_wait_time"]

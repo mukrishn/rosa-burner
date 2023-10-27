@@ -65,7 +65,8 @@ locals {
 }
 
 resource "rhcs_cluster_rosa_classic" "rosa_sts_cluster" {
-  name                 = var.cluster_name
+  count                = var.clusters_per_apply
+  name                 = "${var.cluster_name}-${format("%04d", var.loop_factor + count.index + 1)}"
   cloud_region         = var.cloud_region
   aws_account_id       = data.aws_caller_identity.current.account_id
   availability_zones   = var.availability_zones
@@ -79,5 +80,6 @@ resource "rhcs_cluster_rosa_classic" "rosa_sts_cluster" {
     rosa_creator_arn = data.aws_caller_identity.current.arn
   }
   sts                      = local.sts_roles
-  wait_for_create_complete = true
+  wait_for_create_complete = false
+  disable_waiting_in_destroy = true
 }
