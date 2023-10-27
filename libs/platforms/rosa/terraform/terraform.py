@@ -105,7 +105,7 @@ class Terraform(Rosa):
                             return 1
                         else:
                             self.logging.info(f"Applied OIDC template successfully for cluster seed {tf_name} looping {loop_counter + 1}")
-                            with open(tf_path + "/terraform/oidc_provider/terraform.tfstate", "r") as terraform_state:
+                            with open(tf_path + "/terraform/terraform_oidc.tfstate", "r") as terraform_state:
                                 json_output = json.load(terraform_state)
                             oidc_id = json_output["outputs"]["id"]["value"]
                         
