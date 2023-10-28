@@ -198,6 +198,7 @@ class Terraform(Rosa):
                         myenv["TF_VAR_clusters_per_apply"] = str(self.environment['clusters_per_apply'])
                         myenv["TF_VAR_loop_factor"] = str((loop_counter * self.environment['clusters_per_apply']))
 
+                        cluster_start_time = int(datetime.datetime.utcnow().timestamp())
                         if tf_module == "oidc":
                             # additional env for oidc_provider template
                             myenv["TF_VAR_managed"] = "true"
@@ -208,9 +209,8 @@ class Terraform(Rosa):
                                 self.logging.error(f"OIDC with seed {tf_name} looping {loop_counter + 1} terraform destroy failed")
                                 self.logging.debug(terraform_oidc_destroy_out)
                                 return 1
-                            
+
                         else:
-                            cluster_start_time = int(datetime.datetime.utcnow().timestamp())
                             self.logging.info(f"Deleting Clusters with seed {tf_name} looping {loop_counter + 1} on Rosa Platform using terraform")
                             cleanup_code, cleanup_out, cleanup_err = self.utils.subprocess_exec("terraform apply -destroy -state=" + tf_path + "/terraform.tfstate --auto-approve", tf_path + "/cleanup.log", {"cwd": self.environment['path'] + "/terraform", 'preexec_fn': self.utils.disable_signals, "env": myenv})
 
