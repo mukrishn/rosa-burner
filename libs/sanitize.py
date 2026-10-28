@@ -9,7 +9,11 @@ _SENSITIVE_FLAGS = frozenset({
 })
 _SENSITIVE_FLAG_PREFIXES = ("--token=", "--password=", "--client-secret=")
 _SENSITIVE_KEY_FRAGMENTS = ("password", "secret", "token", "kubeconfig", "credential")
-_URL_AUTH_PATTERN = re.compile(r"https://[^:@/]+:[^@/]+@")
+# Capture scheme so http:// and https:// credentials are both masked.
+_URL_AUTH_PATTERN = re.compile(r"(https?://)[^:@/]+:[^@/]+@")
+# Quoted or unquoted values for --flag=VALUE / --flag VALUE
+_QUOTED_OR_TOKEN = r"(?:'[^']*'|\"[^\"]*\"|\S+)"
+_INLINE_SENSITIVE_FLAGS = ("--token", "--password", "--client-secret")
 
 
 def redact_command(command):
@@ -42,13 +46,20 @@ def _redact_command_list(cmd):
 
 
 def _redact_command_string(text):
-    text = _URL_AUTH_PATTERN.sub("https://***:***@", text)
-    text = re.sub(r"(--token=)\S+", r"\1***", text)
-    text = re.sub(r"(--password=)\S+", r"\1***", text)
-    text = re.sub(r"(--client-secret=)\S+", r"\1***", text)
-    text = re.sub(r"(--token)\s+\S+", r"\1 ***", text)
-    text = re.sub(r"(--password)\s+\S+", r"\1 ***", text)
-    text = re.sub(r"(--client-secret)\s+\S+", r"\1 ***", text)
+    text = _URL_AUTH_PATTERN.sub(r"\1***:***@", text)
+    for flag in _INLINE_SENSITIVE_FLAGS:
+        text = re.sub(
+            rf"({re.escape(flag)}=){_QUOTED_OR_TOKEN}",
+            r"\1***",
+            text,
+        )
+        text = re.sub(
+            rf"({re.escape(flag)})\s+{_QUOTED_OR_TOKEN}",
+            r"\1 ***",
+            text,
+        )
+    # Short -p form (separate argument only)
+    text = re.sub(rf"(-p)\s+{_QUOTED_OR_TOKEN}", r"\1 ***", text)
     return text
 
 
@@ -57,7 +68,7 @@ def redact_output(text):
         return text
     if isinstance(text, bytes):
         text = text.decode("utf-8", errors="replace")
-    text = _URL_AUTH_PATTERN.sub("https://***:***@", text)
+    text = _URL_AUTH_PATTERN.sub(r"\1***:***@", text)
     lowered = text.lower()
     if "kubeconfig" in lowered and any(marker in text for marker in ('"data"', "apiVersion", "clusters")):
         return "<redacted: sensitive kubeconfig/secret content>"
@@ -68,7 +79,9 @@ def redact_url(url):
     if not url:
         return url
     parsed = urlparse(url)
-    return f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+    host = parsed.hostname or ""
+    netloc = f"{host}:{parsed.port}" if parsed.port else host
+    return f"{parsed.scheme}://{netloc}{parsed.path}"
 
 
 def redact_metadata(metadata):

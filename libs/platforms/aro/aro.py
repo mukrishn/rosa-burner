@@ -5,7 +5,6 @@ import json
 import configparser
 import argparse
 import subprocess
-import os
 from azure.identity import ClientSecretCredential, DefaultAzureCredential
 from azure.mgmt.resource import ResourceManagementClient, SubscriptionClient
 from azure.core.exceptions import HttpResponseError

@@ -7,7 +7,7 @@ import argparse
 import configparser
 import sys
 import ssl
-from urllib.parse import urlparse, unquote
+from urllib.parse import urlparse, urlunparse, unquote
 import urllib3
 from libs.sanitize import redact_metadata
 
@@ -35,9 +35,14 @@ class Elasticsearch:
 
         parsed = urlparse(url)
         auth = None
-        if parsed.username and parsed.password:
-            auth = (unquote(parsed.username), unquote(parsed.password))
-            clean_url = f"{parsed.scheme}://{parsed.hostname}:{parsed.port or 443}"
+        if parsed.username is not None or parsed.password is not None:
+            auth = (unquote(parsed.username or ""), unquote(parsed.password or ""))
+            # Strip userinfo only; keep host, explicit port, path, query, and fragment.
+            host = parsed.hostname or ""
+            netloc = f"{host}:{parsed.port}" if parsed.port else host
+            clean_url = urlunparse(
+                (parsed.scheme, netloc, parsed.path, parsed.params, parsed.query, parsed.fragment)
+            )
         else:
             clean_url = url
 
@@ -60,9 +65,10 @@ class Elasticsearch:
                     retry_on_timeout=True,
                 )
             else:
+                # elasticsearch-py <7.14 accepts http_auth, not basic_auth
                 kwargs = {"ssl_context": ssl_ctx, "verify_certs": False, "max_retries": retries, "retry_on_timeout": True}
                 if auth:
-                    kwargs["basic_auth"] = auth
+                    kwargs["http_auth"] = auth
                 self.elastic = ES(clean_url, **kwargs)
 
         elif url.startswith("http://"):
@@ -71,7 +77,7 @@ class Elasticsearch:
             else:
                 kwargs = {"max_retries": retries, "retry_on_timeout": True}
                 if auth:
-                    kwargs["basic_auth"] = auth
+                    kwargs["http_auth"] = auth
                 self.elastic = ES(clean_url, **kwargs)
         else:
             self.logging.error(f"Failed to initialize with url {clean_url}. It must start with http(s)://")

@@ -13,7 +13,7 @@ from azure.core.exceptions import HttpResponseError
 import requests
 import subprocess
 from kubernetes import client as k8s_client, config as k8s_config
-from libs.sanitize import redact_output, redact_url
+from libs.sanitize import redact_output
 from kubernetes.client.rest import ApiException
 from libs.platforms.aro.aro import Aro
 from libs.platforms.aro.aro import AroArguments
@@ -373,7 +373,8 @@ class Hypershift(Aro):
         List nodepools for an ARO HCP cluster via Azure ARM.
 
         Returns:
-            list[dict]: Nodepool resources (empty list if none / on error).
+            list[dict] | None: Nodepool resources, empty list if none exist,
+            or None if the listing request failed (do not treat as "no pools").
         """
         try:
             api_version = "2026-09-01-preview" if self.environment.get("swift", True) else "2024-06-10-preview"
@@ -388,7 +389,7 @@ class Hypershift(Aro):
                 "Authorization": f"Bearer {token}",
                 "Content-Type": "application/json",
             }
-            response = requests.get(nodepools_url, headers=headers)
+            response = requests.get(nodepools_url, headers=headers, timeout=60)
             if response.status_code == 404:
                 self.logging.info(f"[{cluster_name}] No nodepools found (404)")
                 return []
@@ -396,14 +397,14 @@ class Hypershift(Aro):
                 self.logging.warning(
                     f"[{cluster_name}] Unexpected status {response.status_code} listing nodepools: {response.text[:300]}"
                 )
-                return []
+                return None
             items = response.json().get("value") or []
             names = [np.get("name") for np in items if np.get("name")]
             self.logging.info(f"[{cluster_name}] Found {len(items)} nodepool(s): {names}")
             return items
         except Exception as err:
             self.logging.warning(f"[{cluster_name}] Error listing nodepools: {err}")
-            return []
+            return None
 
     def _has_worker_nodepool(self, nodepools, autoscale=False):
         """Return True if a worker nodepool (np-static* / np-scale*) already exists."""
@@ -444,6 +445,13 @@ class Hypershift(Aro):
             add_aro_hcp_infra = False
 
         nodepools = self._list_nodepools(cluster_name, customer_rg_name, subscription_id)
+        if nodepools is None:
+            self.logging.error(
+                f"[{cluster_name}] Failed to list nodepools; not treating as empty — "
+                f"skipping ensure to avoid duplicate creates"
+            )
+            return
+
         has_workers = self._has_worker_nodepool(nodepools, autoscale=autoscale)
         has_infra = self._has_infra_nodepool(nodepools)
 
@@ -523,6 +531,22 @@ class Hypershift(Aro):
         customer_vnet_name = self.environment.get("customer_vnet_name") or f"{cluster_name}-vnet"
         customer_vnet_subnet1 = self.environment.get("customer_vnet_subnet1") or f"{cluster_name}-subnet1"
         managed_resource_group = self.environment.get("managed_resource_group") or f"{cluster_name}-managed-rg"
+
+        # SWIFT: reject shared (rg, vnet) targets across clusters — each deployment
+        # owns the full subnet list and a collision can wipe another cluster's subnet.
+        if self.environment.get("swift", True):
+            vnet_pair = (customer_rg_name, customer_vnet_name)
+            used_pairs = self.environment.setdefault("_swift_vnet_pairs", set())
+            if vnet_pair in used_pairs:
+                self.logging.error(
+                    f"[{cluster_name}] SWIFT VNet already claimed by another cluster in this run: "
+                    f"rg={customer_rg_name} vnet={customer_vnet_name}. "
+                    f"Use per-cluster defaults or distinct --customer-rg-name/--customer-vnet-name."
+                )
+                cluster_info["status"] = "Failed - Shared SWIFT VNet"
+                self.utils.increment_counter("clusters_created_failed")
+                return 1
+            used_pairs.add(vnet_pair)
 
         cluster_info["path"] = platform.environment["path"] + "/" + cluster_name
         os.makedirs(cluster_info["path"], exist_ok=True)
@@ -697,7 +721,7 @@ class Hypershift(Aro):
             prereqs_deployment = Deployment(properties=prereqs_deployment_properties)
 
             cluster_ready_time = None
-            cluster_start_time = None
+            # Keep cluster_start_time from install start (set above); do not reset to None.
 
             try:
                 self.logging.info(f"[{cluster_name}] Deploying cluster prerequisites (aro-hcp-prereqs)")
@@ -1072,6 +1096,8 @@ class Hypershift(Aro):
         delete_start_time = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
         cluster_info["delete_start_time"] = delete_start_time
         cluster_info["status"] = "Deleting"
+        # Fallback when step 1 fails/404 before assigning a real end time
+        cluster_delete_end_time = delete_start_time
 
         # Step 1: Delete the cluster resource first
         self.logging.info(f"[{cluster_name}] Step 1: Deleting ARO HCP cluster resource")
@@ -1093,6 +1119,7 @@ class Hypershift(Aro):
         except HttpResponseError as err:
             if err.status_code == 404:
                 self.logging.warning(f"[{cluster_name}] Cluster resource not found, may already be deleted")
+                cluster_delete_end_time = delete_start_time
             else:
                 self.logging.warning(f"[{cluster_name}] Failed to delete cluster resource: {err}")
                 self.logging.warning(f"[{cluster_name}] Continuing with resource group deletion")
@@ -1174,6 +1201,7 @@ class Hypershift(Aro):
         max_retries = 3
         retry_delay = 5  # seconds
         azure_cluster_data = None
+        metadata_missing = False  # confirmed Azure 404
 
         for attempt in range(1, max_retries + 1):
             try:
@@ -1186,12 +1214,13 @@ class Hypershift(Aro):
                 }
 
                 self.logging.debug(f"[{cluster_name}] Attempting to get metadata (attempt {attempt}/{max_retries})")
-                response = requests.get(cluster_url, headers=headers)
+                response = requests.get(cluster_url, headers=headers, timeout=60)
                 if response.status_code == 404:
                     self.logging.warning(
                         f"[{cluster_name}] Cluster not found in Azure (404); "
                         f"will ignore for workload/delete"
                     )
+                    metadata_missing = True
                     break
                 response.raise_for_status()
                 azure_cluster_data = response.json()
@@ -1271,9 +1300,9 @@ class Hypershift(Aro):
                 self.logging.warning(f"[{cluster_name}] Unexpected error retrieving deployment metadata: {err}")
         else:
             self.logging.error(f"[{cluster_name}] Failed to retrieve cluster metadata after all retry attempts")
-            # Set minimal metadata with failed status so the caller can skip this cluster
+            # Confirmed 404 vs transient failure — cleanup must still see unavailable clusters.
             metadata["cluster_name"] = cluster_name
-            metadata["status"] = "metadata_not_found"
+            metadata["status"] = "metadata_not_found" if metadata_missing else "metadata_unavailable"
             metadata["resource_group"] = customer_rg_name
 
         return metadata

@@ -94,7 +94,9 @@ class Utils:
         failed_clusters = []
         for cluster_name, cluster_info in platform.environment.get("clusters", {}).items():
             status = cluster_info.get("status", "unknown")
-            if "Failed" in status or status in ("thread_failed", "metadata_not_found", "Delete Failed"):
+            if "Failed" in status or status in (
+                "thread_failed", "metadata_not_found", "metadata_unavailable", "Delete Failed"
+            ):
                 failed_clusters.append((cluster_name, status))
 
         if failed_clusters:
@@ -184,6 +186,8 @@ class Utils:
             time.sleep(platform.environment["wait_before_cleanup"] * 60)
         self.logging.info(f"Attempting to start cleanup process of {len(platform.environment['clusters'])} clusters waiting {platform.environment['delay_between_cleanup']} seconds between each deletion")
         delete_cluster_thread_list = []
+        # metadata_unavailable: keep for cleanup (transient get_metadata failure).
+        # metadata_not_found: confirmed Azure 404 — nothing to delete.
         skip_statuses = ("metadata_not_found", "Not Created", "thread_failed")
         for cluster_name, cluster_info in platform.environment["clusters"].items():
             status = cluster_info.get("status")
@@ -224,7 +228,8 @@ class Utils:
             platform.environment["clusters"][cluster_name] = {}
             platform.environment["clusters"][cluster_name]["metadata"] = platform.get_metadata(platform, cluster_name)
 
-            # Missing clusters: drop from the set so workload/delete do not attempt them
+            # Confirmed missing (404): drop. Transient metadata failures: keep for cleanup,
+            # but status stays off the workload-eligible set (ready/installed/Completed/Succeeded).
             metadata_status = platform.environment["clusters"][cluster_name]["metadata"].get("status")
             if metadata_status is None or metadata_status == "metadata_not_found":
                 self.logging.warning(
@@ -237,6 +242,11 @@ class Utils:
             platform.environment["clusters"][cluster_name]["path"] = platform.environment["path"] + "/" + cluster_name
             platform.environment["clusters"][cluster_name]["kubeconfig"] = platform.environment["clusters"][cluster_name]["path"] + "/kubeconfig"
             platform.environment['clusters'][cluster_name]['workers'] = int(platform.environment["workers"].split(",")[(loop_counter - 1) % len(platform.environment["workers"].split(","))])
+            if metadata_status == "metadata_unavailable":
+                self.logging.warning(
+                    f"[{cluster_name}] Metadata unavailable after retries; "
+                    f"keeping cluster for cleanup, skipping workload scheduling"
+                )
         return platform
 
     def validate_azure_prom_token(self, platform, phase="workload"):
@@ -443,7 +453,8 @@ class Utils:
         # Copy executor to the local folder because we saw in the past that we cannot use kube-burner with multiple executions at the same time
         # shutil.copy2(platform.environment['load']['executor'], my_path)
         load_env["ITERATIONS"] = str(platform.environment['clusters'][cluster_name]['workers'] * platform.environment['load']['jobs'])
-        is_index = load == "index" or (load == "" and "index" in platform.environment['load'].get('workload', ''))
+        effective_workload = load if load != "" else platform.environment['load']['workload']
+        is_index = effective_workload == "index" or "index" in str(effective_workload)
         if is_index:
             load_env["EXTRA_FLAGS"] = "--ignore-health-check"
         else:
@@ -481,10 +492,13 @@ class Utils:
                 self.logging.info(f"Cluster {cluster_name} monitoring stable for 2 minutes. Proceeding with workload.")
 
             else:
-                self.logging.info(f"Checking cluster {cluster_name} health using oc wait --for=condition=Available=True co --timeout=60m --all")
-                health_cmd = "oc wait --for=condition=Available=True co --timeout=60m --all"
-
-                # health_cmd = "oc adm wait-for-stable-cluster --minimum-stable-period=15s --timeout=20m"
+                self.logging.info(
+                    f"Checking cluster {cluster_name} health using "
+                    f"oc adm wait-for-stable-cluster --minimum-stable-period=15s --timeout=20m"
+                )
+                health_cmd = (
+                    "oc adm wait-for-stable-cluster --minimum-stable-period=15s --timeout=20m"
+                )
 
                 health_code, health_out, health_err = self.subprocess_exec(
                     health_cmd,
