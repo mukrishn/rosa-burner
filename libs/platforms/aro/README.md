@@ -22,7 +22,7 @@ This document covers the CLI arguments for deploying and managing ARO-HCP cluste
 | `--azure-region` | `HCP_BURNER_AZURE_REGION` | `eastus` | Azure region for cluster deployment |
 | `--azure-mc-subscription` | `HCP_BURNER_MC_SUBSCRIPTION` | - | Azure subscription where Management Cluster is installed |
 | `--aro-env` | `HCP_BURNER_ARO_ENV` | `production` | ARO environment |
-| `--aro-version` | `HCP_BURNER_ARO_VERSION` | `4.20.8` | OpenShift version. `major.minor.patch` for `stable`/`fast`; full string for `nightly`/`candidate` (e.g. `4.22.0-0.nightly-2026-08-18-014739`) |
+| `--aro-version` | `HCP_BURNER_ARO_VERSION` | `4.20.8` | OpenShift version. `major.minor.patch` for `stable`/`fast`; full string for `nightly`/`candidate` (e.g. `4.22.0-0.nightly-2026-08-18-014739`). Nightly control planes use the major.minor portion plus an exact-version resource tag. |
 | `--aro-version-channel` | `HCP_BURNER_ARO_VERSION_CHANNEL` | `stable` | Version channel group. Options: `stable`, `fast`, `candidate`, `nightly` |
 
 ### ARO-HCP Hypershift Arguments
@@ -134,7 +134,7 @@ python hcp-burner.py \
 
 ### Nightly / candidate builds
 
-Pass the **full** version string and set `--aro-version-channel nightly` (or `candidate`). Cluster Service requires the full id on those channels; trimming to `major.minor` only happens for `stable`/`fast`.
+Pass the **full** version string and set `--aro-version-channel nightly` (or `candidate`). For nightly, ARO-HCP receives the major.minor portion in `version.id` and the full build in the `aro-hcp.experimental.cluster.control-plane-exact-version` resource tag.
 
 ```bash
 python hcp-burner.py \
@@ -188,8 +188,9 @@ When `--add-aro-hcp-infra true` is set:
 
 ## Version Handling
 
-The `--aro-version` parameter is the full version id:
-- **Cluster** (`version.id`): `major.minor` (e.g. `4.22`) for `stable`/`fast`; **full string** for `nightly`/`candidate` (e.g. `4.22.0-0.nightly-2026-08-18-014739`)
+The `--aro-version` parameter is the requested version or exact build:
+- **Cluster** (`version.id`): `major.minor` (e.g. `4.22`) for `stable`/`fast` and `nightly`; candidate versions use the full candidate id
+- **Nightly exact build**: the full nightly id is set as the `aro-hcp.experimental.cluster.control-plane-exact-version` resource tag
 - **Nodepools** (`version.id`): always the full `--aro-version` value
 - **Channel** (`version.channelGroup`): `--aro-version-channel` (`stable`, `fast`, `candidate`, `nightly`)
 
@@ -238,4 +239,3 @@ At the end of execution, a summary is displayed showing:
 - Workloads executed successfully vs failed
 - Clusters deleted successfully vs failed
 - List of any failed clusters with failure reasons
-

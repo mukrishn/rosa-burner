@@ -91,10 +91,12 @@ class Hypershift(Aro):
     def _resolve_cluster_version(self, aro_version, channel):
         """Resolve the cluster version based on the channel group.
 
-        For nightly/candidate channels, pass the full version string as-is.
+        For nightly, the RP requires major.minor in version.id; the exact
+        build is supplied separately through the control-plane exact-version
+        resource tag. Candidate versions are passed through as-is.
         For stable/fast channels, trim to major.minor (e.g., 4.23 from 4.23.8).
         """
-        if channel in ("nightly", "candidate"):
+        if channel == "candidate":
             return aro_version
         version_parts = aro_version.split('.')
         return f"{version_parts[0]}.{version_parts[1]}" if len(version_parts) >= 2 else aro_version
@@ -672,6 +674,7 @@ class Hypershift(Aro):
             aro_version = self.environment.get("aro_version", "4.20.8")
             aro_version_channel = self.environment.get("aro_version_channel", "stable")
             cluster_version = self._resolve_cluster_version(aro_version, aro_version_channel)
+            control_plane_exact_version = aro_version if aro_version_channel == "nightly" else ""
             self.logging.info(
                 f"[{cluster_name}] OCP version channel={aro_version_channel} "
                 f"cluster={cluster_version} nodepool={aro_version}"
@@ -770,6 +773,9 @@ class Hypershift(Aro):
                 cluster_create_parameters = dict(base_cluster_parameters)
                 cluster_create_parameters["operatorsAuth"] = {"value": operators_auth}
                 cluster_create_parameters["hcpIdentity"] = {"value": hcp_identity}
+                cluster_create_parameters["controlPlaneExactVersion"] = {
+                    "value": control_plane_exact_version
+                }
 
                 cluster_deployment_properties = DeploymentProperties(
                     mode=DeploymentMode.INCREMENTAL,
@@ -1314,7 +1320,7 @@ class Hypershift(Aro):
         Args:
             cluster_name: Name of the cluster
             platform: Platform object to access environment and cluster_info
-            external_auth_name: Name for external auth (default: {cluster_name}-auth)
+            external_auth_name: Name for external auth (default: {cluster_name})
             issuer_url: OIDC issuer URL (required if creating external auth)
             customer_rg_name: Resource group name (default: from environment or {cluster_name}-rg)
 
@@ -1328,7 +1334,7 @@ class Hypershift(Aro):
             customer_rg_name = self.environment.get("customer_rg_name") or f"{cluster_name}-rg"
 
         if external_auth_name is None:
-            external_auth_name = f"{cluster_name}-auth"
+            external_auth_name = cluster_name
 
         subscription_id = self.environment.get("subscription_id")
         api_version = "2026-09-01-preview" if self.environment.get("swift", True) else "2024-06-10-preview"

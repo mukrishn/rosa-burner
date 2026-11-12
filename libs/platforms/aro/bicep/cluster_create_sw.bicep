@@ -22,6 +22,9 @@ param clusterVersion string = '4.20'
 @description('The version channel group (e.g., stable, candidate)')
 param versionChannelGroup string = 'stable'
 
+@description('Exact nightly control-plane version to pin when versionChannelGroup is nightly')
+param controlPlaneExactVersion string = ''
+
 @description('VNet Integration Subnet Name for SWIFT networking')
 param vnetIntegrationSubnetName string
 
@@ -63,6 +66,9 @@ resource etcdEncryptionKey 'Microsoft.KeyVault/vaults/keys@2024-12-01-preview' e
 resource hcp 'Microsoft.RedHatOpenShift/hcpOpenShiftClusters@2026-09-01-preview' = {
   name: clusterName
   location: resourceGroup().location
+  tags: !empty(controlPlaneExactVersion) ? {
+    'aro-hcp.experimental.cluster.control-plane-exact-version': controlPlaneExactVersion
+  } : {}
   properties: {
     version: {
       id: clusterVersion
