@@ -75,14 +75,24 @@ class Rosa(Platform):
         super().initialize()
 
         # ROSA Login
-        self.logging.info("Attempting to log in ROSA using `rosa login`")
-        rosa_login_command = "rosa login --token " + self.environment["ocm_token"]
-        if self.environment["rosa_env"]:
-            rosa_login_command += " --env " + self.environment["rosa_env"]
-        rosa_code, rosa_out, rosa_err = self.utils.subprocess_exec(rosa_login_command)
-        sys.exit("Exiting...") if rosa_code != 0 else self.logging.info(
-            "`rosa login` execution OK"
+        rosa_code, _, _ = self.utils.subprocess_exec(
+            ["rosa", "list", "clusters", "--output", "json"],
+            extra_params={"universal_newlines": True},
+            log_output=False,
         )
+        if rosa_code == 0:
+            self.logging.info(
+                "Existing ROSA session is active; skipping `rosa login`"
+            )
+        else:
+            self.logging.info("Attempting to log in ROSA using `rosa login`")
+            rosa_login_command = "rosa login --token " + self.environment["ocm_token"]
+            if self.environment["rosa_env"]:
+                rosa_login_command += " --env " + self.environment["rosa_env"]
+            rosa_code, rosa_out, rosa_err = self.utils.subprocess_exec(rosa_login_command)
+            sys.exit("Exiting...") if rosa_code != 0 else self.logging.info(
+                "`rosa login` execution OK"
+            )
 
     def _set_oidc_config(self):
         if self.environment["oidc_config_id"]:

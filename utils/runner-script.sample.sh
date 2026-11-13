@@ -35,7 +35,24 @@ export HCP_BURNER_WORKERS_WAIT_TIME=60
 export HCP_BURNER_HYPERSHIFT_SERVICE_CLUSTER=
 export HCP_BURNER_CLUSTERS_PER_VPC=5
 #export HCP_BURNER_WILDCARD_OPTIONS='--tags TicketId:XXXX'
-export HCP_BURNER_WILDCARD_OPTIONS='--compute-machine-type m5.2xlarge --tags TicketId:XXXX'
+export HCP_BURNER_WILDCARD_OPTIONS='--compute-machine-type m5.xlarge --tags TicketId:XXXX'
+
+# Default ROSA-HCP machinepool autoscaling
+export HCP_BURNER_AUTOSCALE=true
+export HCP_BURNER_MIN_REPLICAS=3
+export HCP_BURNER_MAX_REPLICAS=10
+
+# Additional autoscaled machinepools: 25 pools, distributed across the cluster AZs
+export HCP_BURNER_MACHINE_POOL_NAME=extra
+export HCP_BURNER_MACHINE_POOL_MACHINE_TYPE=m5.xlarge
+export HCP_BURNER_MACHINE_POOL_COUNT=25
+export HCP_BURNER_MACHINE_POOL_AUTOSCALE=true
+export HCP_BURNER_MACHINE_POOL_MIN_REPLICAS=3
+export HCP_BURNER_MACHINE_POOL_MAX_REPLICAS=20
+
+# ROSA-HCP infra machinepool
+export HCP_BURNER_ADD_HCP_INFRA=true
+export HCP_BURNER_INFRA_SIZE=r5.4xlarge
 
 export HCP_BURNER_AWS_REGION=us-east-2
 export AWS_SECRET_ACCESS_KEY=
