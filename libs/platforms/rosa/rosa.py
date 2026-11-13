@@ -28,6 +28,7 @@ class Rosa(Platform):
 
         self.environment["oidc_config_id"] = arguments["oidc_config_id"]
         self.environment["common_operator_roles"] = arguments["common_operator_roles"]
+        self.environment["add_hcp_infra"] = str(arguments["add_hcp_infra"]).lower() in ("true", "1", "yes")
 
         if arguments["extra_machinepool_name"]:
             self.environment["extra_machinepool"] = {}
@@ -40,12 +41,23 @@ class Rosa(Platform):
             self.environment["extra_machinepool"]["replicas"] = arguments[
                 "extra_machinepool_replicas"
             ]
+            self.environment["extra_machinepool"]["count"] = arguments[
+                "extra_machinepool_count"
+            ]
             self.environment["extra_machinepool"]["labels"] = arguments[
                 "extra_machinepool_labels"
             ]
             self.environment["extra_machinepool"]["taints"] = arguments[
                 "extra_machinepool_taints"
             ]
+
+        if self.environment["add_hcp_infra"]:
+            self.environment["infra_machinepool"] = {
+                "name": "infra",
+                "machine_type": arguments["infra_size"],
+                "labels": "node-role.kubernetes.io/infra=",
+                "taints": "node-role.kubernetes.io/infra=:NoSchedule",
+            }
 
     def initialize(self):
         super().initialize()
@@ -359,11 +371,13 @@ class Rosa(Platform):
         self.logging.info(
             f"Creating {len(aws_zones)} machinepools {machinepool['name']}-ID on {cluster_name}, one per AWS Zone"
         )
-        machines_per_zone = machinepool["replicas"] // len(aws_zones)
-        extra_machines = machinepool["replicas"] % len(aws_zones)
-        zone_machines = [machines_per_zone] * len(aws_zones)
-        if extra_machines > 0:
-            zone_machines[-1] += extra_machines
+        zone_machines = machinepool.get("zone_replicas")
+        if zone_machines is None:
+            machines_per_zone = machinepool["replicas"] // len(aws_zones)
+            extra_machines = machinepool["replicas"] % len(aws_zones)
+            zone_machines = [machines_per_zone] * len(aws_zones)
+            if extra_machines > 0:
+                zone_machines[-1] += extra_machines
         for id, zone in enumerate(aws_zones):
             if zone_machines[id] == 0:
                 continue
@@ -398,6 +412,35 @@ class Rosa(Platform):
                 self.logging.error(
                     f"Unable to create machinepool {machinepool['name']}-{str(id)} on {cluster_name}"
                 )
+
+    def split_machinepool(self, machinepool, aws_zones):
+        """Split replicas across the requested physical pools and AZs."""
+        count = int(machinepool.get("count", 1))
+        if count < 1:
+            raise ValueError("extra-machinepool-count must be at least 1")
+
+        zone_count = len(aws_zones)
+        if zone_count < 1:
+            raise ValueError("At least one availability zone is required")
+
+        replicas = int(machinepool["replicas"])
+        if replicas < count:
+            raise ValueError(
+                f"{replicas} replicas cannot be distributed across "
+                f"{count} machinepool(s); "
+                "each machinepool must receive at least one replica"
+            )
+
+        machinepools = []
+        for index in range(count):
+            pool = machinepool.copy()
+            zone_index = index % zone_count
+            pool["zone_replicas"] = [0] * zone_count
+            pool["zone_replicas"][zone_index] = replicas // count + (1 if index < replicas % count else 0)
+            pool["replicas"] = pool["zone_replicas"][zone_index]
+            pool["name"] = f"{machinepool['name']}-{index + 1}" if count > 1 else machinepool["name"]
+            machinepools.append(pool)
+        return machinepools
 
     def watcher(self):
         super().watcher()
@@ -508,9 +551,12 @@ class RosaArguments(PlatformArguments):
         parser.add_argument("--aws-region", action=EnvDefault, env=environment, envvar="HCP_BURNER_AWS_REGION", default='us-east-2', help="Token to access OCM API")
         parser.add_argument("--oidc-config-id", action=EnvDefault, env=environment, envvar="HCP_BURNER_OIDC_CONFIG_ID", help="OIDC Config ID to be used on all the clusters")
         parser.add_argument("--common-operator-roles", action="store_true", help="Create one set of operator roles and use it on all clusters")
+        parser.add_argument("--add-hcp-infra", action=EnvDefault, env=environment, envvar="HCP_BURNER_ADD_HCP_INFRA", type=str, default="False", help="Create an infra machinepool for ROSA-HCP (default: False). Accepts: true/false, 1/0, yes/no")
+        parser.add_argument("--infra-size", action=EnvDefault, env=environment, envvar="HCP_BURNER_INFRA_SIZE", default="m5.xlarge", help="Instance type for the HCP infra machinepool")
         parser.add_argument("--extra-machinepool-name", action=EnvDefault, env=environment, envvar="HCP_BURNER_MACHINE_POOL_NAME", help="Add an extra machinepool with this name after cluster is installed")
         parser.add_argument("--extra-machinepool-machine-type", action=EnvDefault, env=environment, envvar="HCP_BURNER_MACHINE_POOL_MACHINE_TYPE", help="Machine Type of the nodes of the extra machinepool", default="m5.xlarge")
         parser.add_argument("--extra-machinepool-replicas", action=EnvDefault, env=environment, envvar="HCP_BURNER_MACHINE_POOL_REPLICAS", help="Number of replicas of the extra machinepool", type=int, default=3)
+        parser.add_argument("--extra-machinepool-count", action=EnvDefault, env=environment, envvar="HCP_BURNER_MACHINE_POOL_COUNT", help="Number of logical extra machinepools to create", type=int, default=1)
         parser.add_argument("--extra-machinepool-labels", action=EnvDefault, env=environment, envvar="HCP_BURNER_MACHINEPOOL_LABELS", type=str, help="Labels to add on the extra machinepool", default=None)
         parser.add_argument("--extra-machinepool-taints", action=EnvDefault, env=environment, envvar="HCP_BURNER_MACHINEPOOL_TAINTS", type=str, help="Taints to add on the extra machinepool", default=None)
 

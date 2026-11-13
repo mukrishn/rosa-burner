@@ -106,17 +106,30 @@ class Platform:
 
         # OCM Login
         if self.environment["ocm_token"]:
-            self.logging.info("Attempting to log in OCM using `ocm login`")
-            ocm_login_command = (
-                "ocm login --url="
-                + self.environment["ocm_url"]
-                + " --token="
-                + self.environment["ocm_token"]
+            # Reuse an already authenticated OCM session when one is available.
+            # This is useful when the runner shares its OCM configuration across
+            # multiple burner invocations. `ocm whoami` also verifies that the
+            # stored credentials are still usable instead of only checking for a
+            # configuration file.
+            ocm_code, _, _ = self.utils.subprocess_exec(
+                ["ocm", "whoami"],
+                extra_params={"universal_newlines": True},
+                log_output=False,
             )
-            ocm_code, ocm_out, ocm_err = self.utils.subprocess_exec(ocm_login_command)
-            sys.exit("Exiting...") if ocm_code != 0 else self.logging.info(
-                "`ocm login` execution OK"
-            )
+            if ocm_code == 0:
+                self.logging.info("Existing OCM session is active; skipping `ocm login`")
+            else:
+                self.logging.info("Attempting to log in OCM using `ocm login`")
+                ocm_login_command = (
+                    "ocm login --url="
+                    + self.environment["ocm_url"]
+                    + " --token="
+                    + self.environment["ocm_token"]
+                )
+                ocm_code, ocm_out, ocm_err = self.utils.subprocess_exec(ocm_login_command)
+                sys.exit("Exiting...") if ocm_code != 0 else self.logging.info(
+                    "`ocm login` execution OK"
+                )
 
     def download_kubeconfig(self, cluster_name, path):
         self.logging.debug(

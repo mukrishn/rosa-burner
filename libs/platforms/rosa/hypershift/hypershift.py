@@ -404,8 +404,10 @@ class Hypershift(Rosa):
                     if node.get("metadata", {})
                     .get("labels", {})
                     .get("hypershift.openshift.io/nodePool")
-                    and machinepool_name
-                    in node["metadata"]["labels"]["hypershift.openshift.io/nodePool"]
+                    and (
+                        node["metadata"]["labels"]["hypershift.openshift.io/nodePool"] == machinepool_name
+                        or node["metadata"]["labels"]["hypershift.openshift.io/nodePool"].startswith(f"{machinepool_name}-")
+                    )
                 )
                 if nodes
                 else 0
@@ -543,31 +545,64 @@ class Hypershift(Rosa):
                 cluster_info["workers_wait_time"] = None
                 cluster_info["status"] = "Ready. Not Access"
                 return 1
+            additional_machinepools = []
             if "extra_machinepool" in platform.environment:
-                extra_machine_pool_start_time = int(datetime.datetime.utcnow().timestamp())
-                self.add_machinepool(cluster_name, cluster_info["metadata"]["cluster_id"], cluster_info["metadata"]["zones"], platform.environment["extra_machinepool"])
+                extra_machinepools = self.split_machinepool(
+                    platform.environment["extra_machinepool"],
+                    cluster_info["metadata"]["zones"],
+                )
+                for index, machinepool in enumerate(extra_machinepools):
+                    machinepool_type = "extra" if len(extra_machinepools) == 1 else f"extra-{index + 1}"
+                    additional_machinepools.append((machinepool_type, machinepool))
+            if "infra_machinepool" in platform.environment:
+                infra_machinepool = platform.environment["infra_machinepool"].copy()
+                infra_zones = cluster_info["metadata"].get("zones") or []
+                infra_machinepool["count"] = len(infra_zones) or 3
+                infra_machinepool["replicas"] = len(infra_zones) or 3
+                infra_machinepools = self.split_machinepool(
+                    infra_machinepool,
+                    cluster_info["metadata"]["zones"],
+                )
+                for index, machinepool in enumerate(infra_machinepools):
+                    machinepool_type = "infra" if len(infra_machinepools) == 1 else f"infra-{index + 1}"
+                    additional_machinepools.append((machinepool_type, machinepool))
+
+            machinepool_start_times = {}
+            for machinepool_type, machinepool in additional_machinepools:
+                machinepool_start_times[machinepool_type] = int(datetime.datetime.utcnow().timestamp())
+                self.add_machinepool(cluster_name, cluster_info["metadata"]["cluster_id"], cluster_info["metadata"]["zones"], machinepool)
             if cluster_info["workers_wait_time"]:
                 with concurrent.futures.ThreadPoolExecutor() as wait_executor:
-                    futures = [wait_executor.submit(self._wait_for_workers, cluster_info["kubeconfig"], cluster_info["workers"], cluster_info["workers_wait_time"], cluster_name, "workers")]
-                    futures.append(wait_executor.submit(self._wait_for_workers, cluster_info["kubeconfig"], platform.environment["extra_machinepool"]["replicas"], cluster_info["workers_wait_time"], cluster_name, platform.environment["extra_machinepool"]["name"])) if "extra_machinepool" in platform.environment else None
+                    futures = {
+                        wait_executor.submit(self._wait_for_workers, cluster_info["kubeconfig"], cluster_info["workers"], cluster_info["workers_wait_time"], cluster_name, "workers"): ("workers", cluster_info["workers"], cluster_start_time),
+                    }
+                    for machinepool_type, machinepool in additional_machinepools:
+                        futures[wait_executor.submit(self._wait_for_workers, cluster_info["kubeconfig"], machinepool["replicas"], cluster_info["workers_wait_time"], cluster_name, machinepool["name"])] = (machinepool_type, machinepool["replicas"], machinepool_start_times[machinepool_type])
+
                     for future in concurrent.futures.as_completed(futures):
                         result = future.result()
-                        if result[0] == "workers":
-                            default_pool_workers = int(result[1])
-                            if default_pool_workers == cluster_info["workers"]:
-                                cluster_info["workers_ready"] = result[2] - cluster_start_time
+                        machinepool_type, expected_workers, start_time = futures[future]
+                        ready_workers = int(result[1])
+                        if ready_workers == expected_workers:
+                            if machinepool_type == "workers":
+                                cluster_info["workers_ready"] = result[2] - start_time
+                            elif machinepool_type.startswith("extra"):
+                                timer_name = "extra_pool_workers_ready" if machinepool_type == "extra" else f"extra_pool_workers_ready_{machinepool_type.split('-')[-1]}"
+                                cluster_info[timer_name] = result[2] - start_time
                             else:
-                                cluster_info['workers_ready'] = None
-                                cluster_info['status'] = "Ready, missing workers"
-                                return 1
+                                cluster_info["infra_pool_workers_ready"] = result[2] - start_time
                         else:
-                            extra_pool_workers = int(result[1])
-                            if "extra_machinepool" in platform.environment and extra_pool_workers == platform.environment["extra_machinepool"]["replicas"]:
-                                cluster_info["extra_pool_workers_ready"] = result[2] - extra_machine_pool_start_time
+                            if machinepool_type == "workers":
+                                cluster_info["workers_ready"] = None
+                                cluster_info["status"] = "Ready, missing workers"
+                            elif machinepool_type.startswith("extra"):
+                                timer_name = "extra_pool_workers_ready" if machinepool_type == "extra" else f"extra_pool_workers_ready_{machinepool_type.split('-')[-1]}"
+                                cluster_info[timer_name] = None
+                                cluster_info["status"] = f"Ready, missing {machinepool_type} workers"
                             else:
-                                cluster_info["extra_pool_workers_ready"] = None
-                                cluster_info['status'] = "Ready, missing extra pool workers"
-                                return 1
+                                cluster_info["infra_pool_workers_ready"] = None
+                                cluster_info["status"] = "Ready, missing infra pool workers"
+                            return 1
             cluster_info['status'] = "ready"
             cluster_info["mgmt_cluster_name"] = mgmt_cluster_name
             cluster_info["metadata"]["mgmt_cluster"] = self.get_ocm_cluster_info(mgmt_cluster_name)

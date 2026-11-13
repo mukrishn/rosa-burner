@@ -41,6 +41,7 @@ class Hypershift(Aro):
             self.environment["min_replicas"] = None
         self.environment["azure_ad_group_name"] = arguments["azure_ad_group_name"]
         self.environment["add_aro_hcp_infra"] = arguments["add_aro_hcp_infra"]
+        self.environment["add_hcp_infra"] = arguments["add_hcp_infra"]
         self.environment["issuer_url"] = arguments["issuer_url"]
         self.environment["azure_prom_token_file"] = arguments["azure_prom_token_file"]
         self.environment["swift"] = arguments["swift"]
@@ -55,7 +56,7 @@ class Hypershift(Aro):
             self.environment["issuer_url"] = f"https://login.microsoftonline.com/{tenant_id}/v2.0"
 
         # Convert string boolean arguments to actual booleans
-        self.environment["add_aro_hcp_infra"] = self._str_to_bool(self.environment.get("add_aro_hcp_infra", "False"))
+        self.environment["add_aro_hcp_infra"] = self._str_to_bool(self.environment.get("add_aro_hcp_infra", "False")) or self._str_to_bool(self.environment.get("add_hcp_infra", "False"))
         self.environment["swift"] = self._str_to_bool(self.environment.get("swift", "True"))
 
         self.logging.info("ARO Hypershift platform initialized")
@@ -2154,6 +2155,7 @@ class HypershiftArguments(AroArguments):
         parser.add_argument("--max-replicas", action=EnvDefault, env=environment, envvar="HCP_BURNER_MAX_REPLICAS", type=int, help="Maximum number of worker replicas for autoscaling (required if --autoscale is set)")
         parser.add_argument("--min-replicas", action=EnvDefault, env=environment, envvar="HCP_BURNER_MIN_REPLICAS", type=int, default=1, help="Minimum number of worker replicas for autoscaling (default: 1)")
         parser.add_argument("--add-aro-hcp-infra", action=EnvDefault, env=environment, envvar="HCP_BURNER_ADD_ARO_HCP_INFRA", type=str, default="False", help="Create infra nodepool for ARO HCP cluster (default: False). Accepts: true/false, 1/0, yes/no")
+        parser.add_argument("--add-hcp-infra", action=EnvDefault, env=environment, envvar="HCP_BURNER_ADD_HCP_INFRA", type=str, default="False", help="Create infra nodepool for ARO-HCP (default: False). Accepts: true/false, 1/0, yes/no")
         parser.add_argument("--azure-ad-group-name", action=EnvDefault, env=environment, envvar="HCP_BURNER_AZURE_AD_GROUP_NAME", default="aro-hcp-perfscale", help="Azure AD group name to grant cluster-admin access (default: aro-hcp-perfscale)")
         parser.add_argument("--issuer-url", action=EnvDefault, env=environment, envvar="HCP_BURNER_ISSUER_URL", default=None, help="OIDC issuer URL for external auth (default: https://login.microsoftonline.com/{tenant_id}/v2.0)")
         parser.add_argument("--azure-prom-token-file", action=EnvDefault, env=environment, envvar="HCP_BURNER_AZURE_PROM_TOKEN_FILE", help="Path to AZURE_PROM_TOKEN file for scraping metrics from MC (Management Cluster)")

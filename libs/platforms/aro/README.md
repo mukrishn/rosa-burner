@@ -50,7 +50,8 @@ This document covers the CLI arguments for deploying and managing ARO-HCP cluste
 |----------|---------------------|---------|-------------|
 | `--worker-size` | `HCP_BURNER_WORKER_SIZE` | `Standard_D4s_v3` | Azure VM size for worker nodes |
 | `--infra-size` | `HCP_BURNER_INFRA_SIZE` | `Standard_E8s_v3` | Azure VM size for infra nodes |
-| `--add-aro-hcp-infra` | `HCP_BURNER_ADD_ARO_HCP_INFRA` | `False` | Create infra nodepool for monitoring/ingress. Accepts: `true/false`, `1/0`, `yes/no` |
+| `--add-hcp-infra` | `HCP_BURNER_ADD_HCP_INFRA` | `False` | Create infra nodepool for monitoring/ingress. Accepts: `true/false`, `1/0`, `yes/no` |
+| `--add-aro-hcp-infra` | `HCP_BURNER_ADD_ARO_HCP_INFRA` | `False` | Legacy alias for `--add-hcp-infra` |
 
 #### Autoscaling Configuration
 
@@ -176,7 +177,7 @@ python hcp-burner.py \
 
 ## Infra Nodes
 
-When `--add-aro-hcp-infra true` is set:
+When `--add-hcp-infra true` is set:
 
 1. An infra nodepool (`np-infra`) is created with:
    - Label: `node-role.kubernetes.io/infra=""`
