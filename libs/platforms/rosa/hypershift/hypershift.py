@@ -449,12 +449,26 @@ class Hypershift(Rosa):
         cluster_info["hostedclusters"] = self.environment["cluster_count"]
         cluster_info["environment"] = self.environment["rosa_env"]
         cluster_info["install_method"] = "rosa"
+        if platform.environment["autoscale"]:
+            cluster_info["workers"] = platform.environment["min_replicas"]
         self.logging.info(f"Creating cluster {cluster_info['index']} on Hypershift with name {cluster_name} and {cluster_info['workers']} workers")
         cluster_info["path"] = platform.environment["path"] + "/" + cluster_name
         os.mkdir(cluster_info["path"])
         self.logging.debug("Attempting cluster installation")
         self.logging.debug("Output directory set to %s" % cluster_info["path"])
-        cluster_cmd = ["rosa", "create", "cluster", "--cluster-name", cluster_name, "--replicas", str(cluster_info["workers"]), "--hosted-cp", "--sts", "--mode", "auto", "-y", "--output", "json", "--oidc-config-id", platform.environment["oidc_config_id"], "--region", platform.environment["aws"]["region"]]
+        cluster_cmd = ["rosa", "create", "cluster", "--cluster-name", cluster_name, "--hosted-cp", "--sts", "--mode", "auto", "-y", "--output", "json", "--oidc-config-id", platform.environment["oidc_config_id"], "--region", platform.environment["aws"]["region"]]
+        if platform.environment["autoscale"]:
+            cluster_cmd.extend(
+                [
+                    "--enable-autoscaling",
+                    "--min-replicas",
+                    str(platform.environment["min_replicas"]),
+                    "--max-replicas",
+                    str(platform.environment["max_replicas"]),
+                ]
+            )
+        else:
+            cluster_cmd.extend(["--replicas", str(cluster_info["workers"])])
         if platform.environment["create_vpcs"]:
             self.logging.debug(platform.environment["vpcs"][(cluster_info["index"])])
             cluster_info["vpc"] = platform.environment["vpcs"][(cluster_info["index"])]

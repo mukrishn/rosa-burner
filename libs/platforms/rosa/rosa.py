@@ -29,6 +29,9 @@ class Rosa(Platform):
         self.environment["oidc_config_id"] = arguments["oidc_config_id"]
         self.environment["common_operator_roles"] = arguments["common_operator_roles"]
         self.environment["add_hcp_infra"] = str(arguments["add_hcp_infra"]).lower() in ("true", "1", "yes")
+        self.environment["autoscale"] = str(arguments["autoscale"]).lower() in ("true", "1", "yes")
+        self.environment["min_replicas"] = arguments["min_replicas"]
+        self.environment["max_replicas"] = arguments["max_replicas"]
 
         if arguments["extra_machinepool_name"]:
             self.environment["extra_machinepool"] = {}
@@ -49,6 +52,15 @@ class Rosa(Platform):
             ]
             self.environment["extra_machinepool"]["taints"] = arguments[
                 "extra_machinepool_taints"
+            ]
+            self.environment["extra_machinepool"]["autoscale"] = str(
+                arguments["extra_machinepool_autoscale"]
+            ).lower() in ("true", "1", "yes")
+            self.environment["extra_machinepool"]["min_replicas"] = arguments[
+                "extra_machinepool_min_replicas"
+            ]
+            self.environment["extra_machinepool"]["max_replicas"] = arguments[
+                "extra_machinepool_max_replicas"
             ]
 
         if self.environment["add_hcp_infra"]:
@@ -391,12 +403,22 @@ class Rosa(Platform):
                 machinepool["machine_type"],
                 "--name",
                 machinepool["name"] + "-" + str(id),
-                "--replicas",
-                str(zone_machines[id]),
                 "--availability-zone",
                 zone,
                 "-y",
             ]
+            if machinepool.get("autoscale", False):
+                machinepool_cmd.extend(
+                    [
+                        "--enable-autoscaling",
+                        "--min-replicas",
+                        str(machinepool["min_replicas"]),
+                        "--max-replicas",
+                        str(machinepool["max_replicas"]),
+                    ]
+                )
+            else:
+                machinepool_cmd.extend(["--replicas", str(zone_machines[id])])
             if machinepool["labels"]:
                 machinepool_cmd.append("--labels")
                 machinepool_cmd.append(machinepool["labels"])
@@ -423,8 +445,9 @@ class Rosa(Platform):
         if zone_count < 1:
             raise ValueError("At least one availability zone is required")
 
+        autoscale = machinepool.get("autoscale", False)
         replicas = int(machinepool["replicas"])
-        if replicas < count:
+        if not autoscale and replicas < count:
             raise ValueError(
                 f"{replicas} replicas cannot be distributed across "
                 f"{count} machinepool(s); "
@@ -436,7 +459,10 @@ class Rosa(Platform):
             pool = machinepool.copy()
             zone_index = index % zone_count
             pool["zone_replicas"] = [0] * zone_count
-            pool["zone_replicas"][zone_index] = replicas // count + (1 if index < replicas % count else 0)
+            if autoscale:
+                pool["zone_replicas"][zone_index] = int(pool["min_replicas"])
+            else:
+                pool["zone_replicas"][zone_index] = replicas // count + (1 if index < replicas % count else 0)
             pool["replicas"] = pool["zone_replicas"][zone_index]
             pool["name"] = f"{machinepool['name']}-{index + 1}" if count > 1 else machinepool["name"]
             machinepools.append(pool)
@@ -551,6 +577,9 @@ class RosaArguments(PlatformArguments):
         parser.add_argument("--aws-region", action=EnvDefault, env=environment, envvar="HCP_BURNER_AWS_REGION", default='us-east-2', help="Token to access OCM API")
         parser.add_argument("--oidc-config-id", action=EnvDefault, env=environment, envvar="HCP_BURNER_OIDC_CONFIG_ID", help="OIDC Config ID to be used on all the clusters")
         parser.add_argument("--common-operator-roles", action="store_true", help="Create one set of operator roles and use it on all clusters")
+        parser.add_argument("--autoscale", action=EnvDefault, env=environment, envvar="HCP_BURNER_AUTOSCALE", type=str, default="False", help="Enable autoscaling for the default ROSA-HCP worker machinepool")
+        parser.add_argument("--min-replicas", action=EnvDefault, env=environment, envvar="HCP_BURNER_MIN_REPLICAS", type=int, default=3, help="Minimum replicas for the default ROSA-HCP worker machinepool")
+        parser.add_argument("--max-replicas", action=EnvDefault, env=environment, envvar="HCP_BURNER_MAX_REPLICAS", type=int, default=10, help="Maximum replicas for the default ROSA-HCP worker machinepool")
         parser.add_argument("--add-hcp-infra", action=EnvDefault, env=environment, envvar="HCP_BURNER_ADD_HCP_INFRA", type=str, default="False", help="Create an infra machinepool for ROSA-HCP (default: False). Accepts: true/false, 1/0, yes/no")
         parser.add_argument("--infra-size", action=EnvDefault, env=environment, envvar="HCP_BURNER_INFRA_SIZE", default="m5.xlarge", help="Instance type for the HCP infra machinepool")
         parser.add_argument("--extra-machinepool-name", action=EnvDefault, env=environment, envvar="HCP_BURNER_MACHINE_POOL_NAME", help="Add an extra machinepool with this name after cluster is installed")
@@ -559,6 +588,9 @@ class RosaArguments(PlatformArguments):
         parser.add_argument("--extra-machinepool-count", action=EnvDefault, env=environment, envvar="HCP_BURNER_MACHINE_POOL_COUNT", help="Number of logical extra machinepools to create", type=int, default=1)
         parser.add_argument("--extra-machinepool-labels", action=EnvDefault, env=environment, envvar="HCP_BURNER_MACHINEPOOL_LABELS", type=str, help="Labels to add on the extra machinepool", default=None)
         parser.add_argument("--extra-machinepool-taints", action=EnvDefault, env=environment, envvar="HCP_BURNER_MACHINEPOOL_TAINTS", type=str, help="Taints to add on the extra machinepool", default=None)
+        parser.add_argument("--extra-machinepool-autoscale", action=EnvDefault, env=environment, envvar="HCP_BURNER_MACHINE_POOL_AUTOSCALE", type=str, default="False", help="Enable autoscaling for extra ROSA-HCP machinepools")
+        parser.add_argument("--extra-machinepool-min-replicas", action=EnvDefault, env=environment, envvar="HCP_BURNER_MACHINE_POOL_MIN_REPLICAS", type=int, default=3, help="Minimum replicas for each autoscaled extra machinepool")
+        parser.add_argument("--extra-machinepool-max-replicas", action=EnvDefault, env=environment, envvar="HCP_BURNER_MACHINE_POOL_MAX_REPLICAS", type=int, default=20, help="Maximum replicas for each autoscaled extra machinepool")
 
         if config_file:
             config = configparser.ConfigParser()
