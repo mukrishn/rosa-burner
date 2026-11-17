@@ -401,7 +401,13 @@ class Rosa(Platform):
             if extra_machines > 0:
                 zone_machines[-1] += extra_machines
         for id, zone in enumerate(aws_zones):
-            if zone_machines[id] == 0:
+            # An autoscaled pool with min_replicas=0 still needs to be
+            # created so ROSA can scale it from zero.  The splitter records
+            # the pool's target AZ in zone_index; skip the other AZs only.
+            if machinepool.get("autoscale", False):
+                if id != machinepool.get("zone_index"):
+                    continue
+            elif zone_machines[id] == 0:
                 continue
             machinepool_cmd = [
                 "rosa",
@@ -468,6 +474,7 @@ class Rosa(Platform):
         for index in range(count):
             pool = machinepool.copy()
             zone_index = index % zone_count
+            pool["zone_index"] = zone_index
             pool["zone_replicas"] = [0] * zone_count
             if autoscale:
                 pool["zone_replicas"][zone_index] = int(pool["min_replicas"])
@@ -526,14 +533,26 @@ class Rosa(Platform):
                     elif state_key == "ready":
                         state[state_key] = state.get(state_key, 0) + 1
                         installed_clusters += 1
-                        required_workers = cluster["nodes"]["compute"]
+                        nodes = cluster.get("nodes", {})
+                        required_workers = nodes.get("compute")
+                        if required_workers is None:
+                            required_workers = nodes.get("autoscale_compute", {}).get(
+                                "min_replicas"
+                            )
+                        if required_workers is None:
+                            self.logging.warning(
+                                "Unable to determine required workers for %s; "
+                                "skipping worker readiness check",
+                                cluster["name"],
+                            )
+                            continue
                         ready_workers = self.get_workers_ready(self.environment["path"]
                                                                + "/"
                                                                + cluster["name"]
                                                                + "/kubeconfig",
                                                                cluster["name"],
                                                                )
-                        if ready_workers == required_workers:
+                        if ready_workers >= required_workers:
                             clusters_with_all_workers += 1
                     elif state_key != "":
                         state[state_key] = state.get(state_key, 0) + 1
