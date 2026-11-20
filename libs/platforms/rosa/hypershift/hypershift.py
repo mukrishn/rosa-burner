@@ -8,6 +8,7 @@ import time
 import datetime
 import math
 import shutil
+import shlex
 import concurrent.futures
 import configparser
 from copy import deepcopy
@@ -617,6 +618,13 @@ class Hypershift(Rosa):
                                 cluster_info["infra_pool_workers_ready"] = None
                                 cluster_info["status"] = "Ready, missing infra pool workers"
                             return 1
+            if "infra_machinepool" in platform.environment and cluster_info.get("kubeconfig"):
+                self.logging.info(f"[{cluster_name}] Configuring infrastructure components to use infra nodes")
+                infra_move_start = int(datetime.datetime.utcnow().timestamp())
+                cluster_info["infra_components_moved"] = self._move_infra_components(
+                    cluster_info["kubeconfig"], cluster_name
+                )
+                cluster_info["infra_setup_duration"] = int(datetime.datetime.utcnow().timestamp()) - infra_move_start
             cluster_info['status'] = "ready"
             cluster_info["mgmt_cluster_name"] = mgmt_cluster_name
             cluster_info["metadata"]["mgmt_cluster"] = self.get_ocm_cluster_info(mgmt_cluster_name)
@@ -649,6 +657,38 @@ class Hypershift(Rosa):
                 #     logging.info("Saving must-gather file of hosted cluster %s" % cluster_name)
                 #     _get_must_gather(cluster_path, cluster_name)
                 #     _get_mgmt_cluster_must_gather(mgmt_kubeconfig_path, path)
+
+    def _get_infra_template_path(self, template_name):
+        return os.path.join(os.path.dirname(os.path.abspath(__file__)), template_name)
+
+    def _move_infra_components(self, kubeconfig, cluster_name):
+        """Schedule ROSA-HCP ingress and monitoring components on infra nodes."""
+        myenv = os.environ.copy()
+        myenv["KUBECONFIG"] = kubeconfig
+        success = True
+
+        ingress_patch_path = self._get_infra_template_path("ingress-infra-patch.yaml")
+        monitoring_config_path = self._get_infra_template_path("cluster-monitoring-config.yaml")
+
+        patch_code, _, patch_err = self.utils.subprocess_exec(
+            f"oc patch ingresscontroller/default -n openshift-ingress-operator --type=merge --patch-file={shlex.quote(ingress_patch_path)}",
+            extra_params={"env": myenv, "universal_newlines": True},
+        )
+        if patch_code != 0:
+            self.logging.error(f"[{cluster_name}] Failed to patch IngressController: {patch_err}")
+            success = False
+
+        apply_code, _, apply_err = self.utils.subprocess_exec(
+            f"oc apply -f {shlex.quote(monitoring_config_path)}",
+            extra_params={"env": myenv, "universal_newlines": True},
+        )
+        if apply_code != 0:
+            self.logging.error(f"[{cluster_name}] Failed to apply monitoring config: {apply_err}")
+            success = False
+
+        if success:
+            self.logging.info(f"[{cluster_name}] Infrastructure components configured to use infra nodes")
+        return success
 
     def _namespace_wait(self, kubeconfig, cluster_id, cluster_name, type):
         start_time = int(datetime.datetime.utcnow().timestamp())
