@@ -31,6 +31,8 @@ To use the config file, define parameters related to platform under the `[Platfo
 | --extra-machinepool-autoscale   | false             |                              | HCP_BURNER_MACHINE_POOL_AUTOSCALE |
 | --extra-machinepool-min-replicas| 3                 |                              | HCP_BURNER_MACHINE_POOL_MIN_REPLICAS |
 | --extra-machinepool-max-replicas| 20                |                              | HCP_BURNER_MACHINE_POOL_MAX_REPLICAS |
+| --extra-machinepool-use-spot-instances | false       |                              | HCP_BURNER_MACHINE_POOL_USE_SPOT_INSTANCES |
+| --extra-machinepool-spot-max-price |                   |                              | HCP_BURNER_MACHINE_POOL_SPOT_MAX_PRICE |
 
 `--extra-machinepool-count` is the total number of physical pools. With
 multi-AZ clusters, ROSA distributes those pools across the availability zones

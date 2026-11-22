@@ -62,6 +62,12 @@ class Rosa(Platform):
             self.environment["extra_machinepool"]["max_replicas"] = arguments[
                 "extra_machinepool_max_replicas"
             ]
+            self.environment["extra_machinepool"]["use_spot_instances"] = str(
+                arguments["extra_machinepool_use_spot_instances"]
+            ).lower() in ("true", "1", "yes")
+            self.environment["extra_machinepool"]["spot_max_price"] = arguments[
+                "extra_machinepool_spot_max_price"
+            ]
 
         if self.environment["add_hcp_infra"]:
             self.environment["infra_machinepool"] = {
@@ -441,6 +447,12 @@ class Rosa(Platform):
             if machinepool["taints"]:
                 machinepool_cmd.append("--taints")
                 machinepool_cmd.append(machinepool["taints"])
+            if machinepool.get("use_spot_instances", False):
+                machinepool_cmd.append("--use-spot-instances")
+                if machinepool.get("spot_max_price"):
+                    machinepool_cmd.extend(
+                        ["--spot-max-price", machinepool["spot_max_price"]]
+                    )
             (
                 machinepool_code,
                 machinepool_out,
@@ -620,6 +632,8 @@ class RosaArguments(PlatformArguments):
         parser.add_argument("--extra-machinepool-autoscale", action=EnvDefault, env=environment, envvar="HCP_BURNER_MACHINE_POOL_AUTOSCALE", type=str, default="False", help="Enable autoscaling for extra ROSA-HCP machinepools")
         parser.add_argument("--extra-machinepool-min-replicas", action=EnvDefault, env=environment, envvar="HCP_BURNER_MACHINE_POOL_MIN_REPLICAS", type=int, default=3, help="Minimum replicas for each autoscaled extra machinepool")
         parser.add_argument("--extra-machinepool-max-replicas", action=EnvDefault, env=environment, envvar="HCP_BURNER_MACHINE_POOL_MAX_REPLICAS", type=int, default=20, help="Maximum replicas for each autoscaled extra machinepool")
+        parser.add_argument("--extra-machinepool-use-spot-instances", action=EnvDefault, env=environment, envvar="HCP_BURNER_MACHINE_POOL_USE_SPOT_INSTANCES", type=str, default="False", help="Use Spot instances for extra ROSA-HCP machinepools (default: False)")
+        parser.add_argument("--extra-machinepool-spot-max-price", action=EnvDefault, env=environment, envvar="HCP_BURNER_MACHINE_POOL_SPOT_MAX_PRICE", type=str, default=None, help="Maximum Spot price for extra ROSA-HCP machinepools; omit to use the on-demand price")
 
         if config_file:
             config = configparser.ConfigParser()

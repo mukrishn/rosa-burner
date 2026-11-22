@@ -49,6 +49,10 @@ export HCP_BURNER_MACHINE_POOL_COUNT=25
 export HCP_BURNER_MACHINE_POOL_AUTOSCALE=true
 export HCP_BURNER_MACHINE_POOL_MIN_REPLICAS=3
 export HCP_BURNER_MACHINE_POOL_MAX_REPLICAS=20
+# Optional Spot configuration for extra machinepools only. The default ROSA-HCP
+# worker machinepool does not support Spot instances.
+#export HCP_BURNER_MACHINE_POOL_USE_SPOT_INSTANCES=true
+#export HCP_BURNER_MACHINE_POOL_SPOT_MAX_PRICE=0.50
 
 # ROSA-HCP infra machinepool
 export HCP_BURNER_ADD_HCP_INFRA=true
